@@ -1,0 +1,10 @@
+ORCLPDB1=
+ (DESCRIPTION =
+   (ADDRESS_LIST =
+     (ADDRESS = (PROTOCOL = TCP)(Host = exthost.etsii.ull.es)(Port =9521))
+   )
+ (CONNECT_DATA =
+   (SERVICE_NAME =ORCLPDB1)
+ )
+)
+

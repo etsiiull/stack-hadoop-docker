@@ -1,0 +1,150 @@
+#!/bin/bash
+
+. /etc/configura-pam.conf
+
+
+# Controlar si es un usuario LOCAL
+if grep -q "^${USER}*" /etc/passwd; then
+  [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   [${USER}] es un usuario local, no se monta nada."
+  exit 0
+fi
+
+
+
+echo "[Cerrando sesión]"
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Iniciando pam_script_ses_close. Cerrando sesión de ${USER} "
+
+# evitar que se ejecute el script suelto
+if [ -z $PAM_USER ]
+then
+	[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] No es posible la ejecución directa, PAM_USER no definido. Saliendo... "
+	echo "No es posible la ejecución directa, PAM_USER no definido. Saliendo..."
+	sleep 5
+	exit
+fi
+
+# evitar que se ejecutar si no está definida variable
+if [ -z $MNTPT ]
+then
+	echo "Error MNTPT no definida"
+	exit
+fi
+
+
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Cerrando sesión USER: $USER PAM-USER:$PAM_USER PAM-RHOST:$PAM_RHOST PAM-SERVICE:$PAM_SERVICE PAM-TTY: $PAM_TTY PAM-TYPE:$PAM_TYPE "
+
+GRUPO=`id $PAM_USER -g`
+USUARIOID=`id $PAM_USER -u`
+
+
+# Controlar si es un usuario LOCAL
+if grep -q "^${PAM_USER}:.*:${MNTPT}:.*" /etc/passwd; then
+  [ $DEBUG -ne 0 ] && ${LOG} "[${USER}] es un usuario local, saliendo."
+  exit 0
+fi
+
+LOGGED=`who | grep $PAM_USER | wc -l`
+MOUNTED=`mount | grep $PAM_USER | grep cifs | wc -l`
+
+# Usuario no está logueado, pero montado
+# Copiar perfi de usuario y desmontar la unidad
+if [ $LOGGED == '0' ]  && [ -e $MNTPT ] && [ -e $MNTPT/$DDVDIR/$PERFIL ] && [ $MOUNTED == '1' ]; then
+     [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Existe el directorio  $MNTPT y el usuario no está logueado varias veces"
+
+	RutaCompleta=$MNTPT/$i
+	# Comenzamos extrayendo la parte derecha desde el ultimo caracter "/", es decir, el archivo
+	NombreArchivo="${RutaCompleta##*/}"
+	# Longitud de la ruta es el total de caracteres menos el largo del nombre de archivo
+	LargoRuta="${#RutaCompleta} - ${#NombreArchivo}"
+	# Extraermos la ruta desde el caracter 0 hasta el caracter final de largo de ruta
+	RutaSola="${RutaCompleta:0:$LargoRuta}"
+
+     [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] NombreArchivo ${NombreArchivo} LargoRuta ${LargoRuta} RutaSola ${RutaSola} "
+
+
+     LISTA=`grep -E -v '^(#|$)' $MNTPT/$DDVDIR/$PERFIL/ficheros-perfil-local`
+     for i in $LISTA
+     do
+	# tres casos: es un fichero, un directorio anidado, un fichero en subdirectorio
+  [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Item: $MNTPT/$i "
+
+	if [ -d "$MNTPT/$i" ]
+	then
+		mkdir -p $MNTPT/$DDVDIR/$PERFIL/$i
+		rsync -avq $MNTPT/$i/ $MNTPT/$DDVDIR/$PERFIL/$i/
+		[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Ejecutando rsync -avq $MNTPT/$i $MNTPT/$DDVDIR/$PERFIL/$i"
+
+	fi
+
+	if [ -f "$MNTPT/$i" ]
+	then
+	rsync -avq $MNTPT/$i $MNTPT/$DDVDIR/$PERFIL/$i
+		[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Ejecutando rsync -avq $MNTPT/$i $MNTPT/$DDVDIR/$PERFIL/$i"
+	fi
+
+	echo $i
+	done
+
+#  rsync -avqR $MNTPT/$i  $MNTPT/$MNTPT/$DDVDIR/$PERFIL
+#  echo "rsync -avqR /home/$PAM_USER/$i  /home/$PAM_USER/datos/homes.rala/perfil-ubuntu14.04" >> /tmp/log.txt
+
+     [ -d $MNTPT/.ssh ] && rsync -avq $MNTPT/.ssh  $MNTPT/$DDVDIR/$PERFIL
+
+     [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Ejecutando rsync -avq $MNTPT/.ssh  $MNTPT/$DDVDIR/$PERFIL "
+
+     echo "[Perfil fijo copiado]"
+     echo "[Desmontando unidades remotas]"
+
+     [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] [Perfil fijo copiado] "
+
+     umount $MNTPT/$DDVDIR
+     CODRETORNO=$?
+     [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Ejecutando umount $MNTPT/$DDVDIR devuelve $CODRETORNO "
+
+     if [ $CODRETORNO != 0 ]; then
+    	echo "[]"
+       [ $DEBUG -ne 0 ] && ${LOG} "[[PAM-SCRIPT-SES-CLOSE] Error al desmontar unidad remota $MNTPT/$DDVDIR ] "
+	umount $MNTPT/$DDVDIR
+     fi
+
+     [ -e $MNTPT/.gvfs ] && umount $MNTPT/.gvfs
+     [ -e  $MNTPT/.pulse ] && umount $MNTPT/.pulse
+
+fi # copiar perfil de usuario y desmontar
+
+
+#### Borrar perfil local ####
+# Si el usuario no está logueado en el ordenador y existe perfil local
+# Copia de backup del perfil local
+# y borrado del perfil local
+
+LOGGED=`who | grep $PAM_USER | wc -l`
+MOUNTED=`mount | grep $PAM_USER | grep cifs | wc -l`
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] LOGGED:$LOGGED MOUNTED:$MOUNTED PAM_USER:$PAM_USER "
+
+if [ $LOGGED == '0' ]  && [ -e $MNTPT ] && [ $MOUNTED == '0' ]; then
+     [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Existe el directorio  $MNTPT y el usuario no está logueado ni montado "
+     [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] Lo muevo a  como $USER /stored-temporal-profiles/$PAM_USER.$FECHA2 "
+     mkdir -p /stored-temporal-profiles/$PAM_USER.$FECHA2
+     rsync -avq $MNTPT/ /stored-temporal-profiles/$PAM_USER.$FECHA2/
+     echo "rsync -avq $MNTPT/ /stored-temporal-profiles/$PAM_USER.$FECHA2/" >> $LOGFILE
+     [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] rsync -avq $MNTPT/ /stored-temporal-profiles/$PAM_USER.$FECHA2/ "
+     cd  /home
+     rm -Rf --one-file-system $MNTPT
+     echo "[Perfil local eliminado]"
+     [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] [Perfil local eliminado] rm -Rf --one-file-system $MNTPT "
+fi
+
+chmod 700 /stored-temporal-profiles/*
+
+# borrarmos los antiguos
+#cd /stored-temporal-profiles
+#find /stored-temporal-profiles -mtime +3 -exec rm -r {} \;
+
+if [ -e /soft/log/usuarios.log ]; then
+	echo "LOGOUT: $FECHA : $PAM_USER : $HOSTNAME" >> /soft/log/usuarios.log
+fi
+
+sleep 6
+
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-CLOSE] pam_script_ses_close finalizado para $PAM_USER"

@@ -1,0 +1,33 @@
+#!/bin/bash
+FECHA=`date +%d.%m.%Y.%H.%M`
+. /etc/configura-pam.conf
+
+
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-OPEN] Iniciando pam_script-ses_open ${USER}"
+
+MOUNTED2=`mount | grep $PAM_USER | grep cifs | wc -l`
+
+if [ $MOUNTED2 == '0' ]; then
+    echo "[¡¡¡¡¡ Unidad de datos NO montada !!!!! - Contacte con el administrador]"
+
+    [ -z $DISPLAY ] && kdialog --sorry "¡¡¡ No tiene acceso a la unidad de datos -- Contacte con el administrador"
+    [ -z $DISPLAY ] && zenity --warning --text '¡¡¡ No tiene acceso a la unidad de datos -- Contacte con el administrador'
+fi
+
+
+ISGNOME=`echo $SESSION | grep gnome | wc -l`
+
+if [ $ISGNOME == '1' ]; then
+
+	gsettings set org.compiz.core:/org/compiz/profiles/Default/plugins/core/ active-plugins "['core', 'composite', 'opengl', 'compiztoolbox', 'decor', 'vpswitch', 'snap', 'mousepoll', 'resize', 'place', 'move', 'wall', 'grid', 'regex', 'imgpng', 'session', 'gnomecompat', 'animation', 'fade', 'workarounds', 'expo', 'ezoom', 'scale', 'staticswitcher']"
+
+	gsettings set org.compiz.staticswitcher:/org/compiz/profiles/Default/plugins/staticswitcher/ next-key '<Control><Alt>Tab'
+
+	gsettings set org.compiz.staticswitcher:/org/compiz/profiles/Default/plugins/staticswitcher/ next-all-key '<Alt>Tab'
+
+fi
+
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-SES-OPEN] Finalizado pam_script-ses_open para ${USER}"
+
+
+

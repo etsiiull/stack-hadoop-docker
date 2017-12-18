@@ -1,0 +1,124 @@
+version: '3'
+
+services:
+  namenode:
+    image: uhopper/hadoop-namenode
+    hostname: namenode
+    container_name: namenode
+#    domainname: hadoop
+    networks:
+      - hadoop1
+    volumes:
+      - namenode1:/hadoop/dfs/name
+    environment:
+      #- GANGLIA_HOST=<GMOND-RECEIVER-HOST>
+      - CLUSTER_NAME=cluster1
+    env_file:
+      - ./hadoop.env
+    ports:
+      - 50070:50070
+    deploy:
+       mode: replicated
+       replicas: 1
+       restart_policy:
+         condition: on-failure
+       placement:
+         constraints:
+           - node.hostname == c3
+  datanode:
+    image: uhopper/hadoop-datanode
+    hostname: datanode
+    container_name: datanode
+#    domainname: hadoop
+    networks: 
+      - hadoop1
+    volumes:
+      - datanode1:/hadoop/dfs/data
+    environment:
+      #- GANGLIA_HOST=<GMOND-RECEIVER-HOST>
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+    env_file:
+      - ./hadoop.env
+
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+
+  resourcemanager:
+    image: uhopper/hadoop-resourcemanager
+    hostname: resourcemanager
+    #domainname: hadoop
+    container_name: resourcemanager
+##    command: tail -f /var/log/dmesg
+    networks: 
+      - hadoop1
+    env_file:
+      - ./hadoop.env
+
+    environment:
+      #- GANGLIA_HOST=<GMOND-RECEIVER-HOST>
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+      #- YARN_CONF_yarn_log___aggregation___enable=true
+    ports:
+      - 8088:8088
+      - 8042:8042
+
+    deploy:
+       mode: replicated
+       replicas: 1
+       restart_policy:
+         condition: on-failure
+       placement:
+         constraints:
+           - node.hostname == c3
+
+
+  nodemanager:
+    image: uhopper/hadoop-nodemanager
+    hostname: nodemanager
+    container_name: nodemanager
+ #   domainname: hadoop
+    networks: 
+      - hadoop1
+    env_file:
+      - ./hadoop.env
+    deploy:
+       mode: replicated
+       replicas: 3  
+       restart_policy:
+         condition: on-failure
+       placement:
+         constraints:
+           - node.hostname == c3
+
+  spark:
+    image: uhopper/hadoop-spark
+    hostname: spark
+    container_name: spark
+#    domainname: hadoop
+    volumes:
+      - datosspark:/datos
+    networks: 
+       - hadoop1
+    env_file:
+      - ./hadoop.env
+    #environment:
+    #- CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+    # - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
+    ports:
+      - "2222:22"
+
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+    command: tail -f /var/log/dmesg
+
+volumes:
+  namenode1:
+  datanode1:
+  datosspark:
+
+networks:
+  hadoop1:

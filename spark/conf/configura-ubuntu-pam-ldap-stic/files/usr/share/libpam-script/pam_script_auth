@@ -1,0 +1,241 @@
+#!/bin/bash --login
+#
+# Variables disponible $PAM_USER $PAM_RHOST  $PAM_SERVICE $PAM_AUTHTOK $PAM_TTY $PAM_TYPE
+#
+#
+
+# Función que comprueba si existe un elemento ($1) en la lista ($2)
+contiene() {
+  local i
+
+  for i in "${@:2}"; do
+    [[ "$i" == "$1" ]] && return 1;
+  done
+
+  return 0
+}
+
+# Parámetros montaje y configuración inicial
+
+. /etc/configura-pam.conf
+
+
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH] Iniciando pam_script_auth. Abriendo sesión ${PAM_USER} "
+
+echo "[Usuario autenticado, montando unidades remotas]"
+
+# evitar que se ejecutar si no está definida variable
+if [ -z $MNTPT ]; then
+	echo "Error MNTPT no definida"
+	exit
+fi
+
+# evitar que se ejecute el script suelto, pues solo funciona cuando se hace login.
+if [ -z $PAM_USER ];	then
+	echo "No es posible la ejecución directa, PAM_USER no definido. Saliendo..."
+	exit
+fi
+
+GRUPO=`id ${USER} -g`
+USUARIOID=`id ${USER} -u`
+
+# Controlar si es un usuario LOCAL
+if grep -q "^${USER}:.*:${MNTPT}:.*" /etc/passwd; then
+  [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   [${USER}] es un usuario local, no se monta nada."
+  exit 0
+fi
+
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   [${USER}] usuario en red."
+
+# Flag con el que controlamos si se ha podido o no montar el espacio virtual del usuario
+NOMOUNT=0
+
+# Esto entra en el if si el punto de montaje existe (si el RC es 0)
+#    mountpoint - see if a directory is a mountpoint
+#       - Zero if the directory is a mountpoint, non-zero if not.
+
+MOUNTPOINTCMD=`which mountpoint`
+
+if $MOUNTPOINTCMD -q ${MNTPT}/${DDVDIR}; then
+  echo [Las unidades ya estaban montadas]
+  [ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   [${USER}] El punto de montaje ${MNTPT} ya existe. Saliendo."
+  exit
+fi
+
+# Creamos el directorio del usuario
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   [${USER}] Creando estructura de directorios DDV en ${MNTPT}/${DDVDIR}"
+mkdir -p ${MNTPT}/${DDVDIR}
+chmod 0700 ${MNTPT}
+
+# Nos aseguramos de que la estructura de directorios de home tiene los permisos que debe
+countTokens=`echo ${MNTPT} | sed 's/\//\n/g' | wc -w`
+PARTIALPATH=""
+totalTokens=1
+for parte in `echo ${MNTPT} | sed 's/\//\n/g'`; do
+    if [ ! -z $parte ]; then
+      PARTIALPATH="${PARTIALPATH}/${parte}"
+      if [ $totalTokens -eq $countTokens ]; then
+        # Si hemos llegado al último nivel de profundidad, es el directorio home del usuario
+        chown ${USER}:users ${PARTIALPATH}
+      else
+        # Si no, es que el usuario no debe tener acceso a esa parte
+        chown root:root ${PARTIALPATH}
+      fi
+      totalTokens=`echo $totalTokens + 1 | bc`
+    fi
+done
+
+
+# Obtenemos el sambaHomePath
+SMBPATH=`$LDAPSRCHCMD -LLL -h $LDAPSRV -b $LDAPBASE -x uid=$USER sambaHomePath | grep sambaHomePath | cut -d" " -f2 | sed -r 's/[\\]/\//g'`
+
+URI=`echo $SMBPATH | cut -d"/" -f3`
+
+# Para evitar montar algo que va a ser imposible, miramos si ese servidor es de los válidos
+contiene $URI "${VALIDMOUNTSRV[@]}"
+retContiene=$?
+
+if [ $retContiene -eq 0 ]; then
+	${LOG} "[PAM-SCRIPT-AUTH]   ${USER}@${URI} El servidor ${URI} no es válido."
+	exit
+fi
+
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   Montando recurso DDV en ${MNTPT}/${DDVDIR}"
+
+MOUNTED=`mount | grep $PAM_USER | grep cifs | wc -l`
+
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   Unidades montadas CIFS de ususario ${PAM_USER}, montadas ${MOUNTED}"
+
+
+CODRETORNO=0  # definimos la variable
+if [ $MOUNTED == '0' ]; then
+	# Montaje del espacio en la nube del usuario
+	mount -t cifs $SMBPATH ${MNTPT}/${DDVDIR} -o "user=${USER},pass=${PAM_AUTHTOK},_netdev,serverino,iocharset=utf8,domain=ULL"
+	CODRETORNO=$?
+	[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   Codigo retorno  ${CODRETRONO} de mount -t cifs $SMBPATH ${MNTPT}/${DDVDIR} -o user=:!${USER},_netdev,serverino,iocharset=utf8,domain=ULL"
+
+fi
+
+MOUNTED2=`mount | grep $PAM_USER | grep cifs | wc -l`
+if [ $MOUNTED2 == '0' ]; then
+	echo "[¡¡¡¡¡ Unidad de datos NO montada !!!!! - Contacte con el administrador]"
+	[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   [${USER}@${URI}] ERROR. No montado!"
+
+    if [ -z $SESSION ]; then
+	    kdialog --sorry "¡¡¡ No tiene acceso a la unidad de datos -- Contacte con el administrador"
+	    zenity --warning --text '¡¡¡ No tiene acceso a la unidad de datos -- Contacte con el administrador'
+    fi
+else
+	echo "[Unidad de datos montada, copiando perfil remoto a local]"
+	[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   [${USER}@${URI}] Montado."
+fi
+
+# crear fichero de información sobre los directorios
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH] Creando ficheros de información de ${USER}"
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH] chmod 700 ${MNTPT}  chmod 500 ${MNTPT} chmod 755 /home"
+
+chown $PAM_USER ${MNTPT}
+chmod 700 ${MNTPT}
+chmod 755 /home
+chmod 755 /home/ull.es
+
+touch ${MNTPT}/DONT-SAVE-YOUR-FILES-IN-THIS-FOLDER-THEY-WILL-BE-DELETED
+touch ${MNTPT}/NO-GUARDE-SUS-ARCHIVOS-EN-ESTA-CARPETA-SERAN-BORRADOS
+cat >${MNTPT}/IMPORTANTE.TXT<<EOF
+
+El directorio ${MNTPT} es un directorio local. Los archivos y directorios que guarde en este directorio se consideran temporales y son BORRADOS.
+
+Guarde sus archivos en ${MNTPT}/$DDVDIR
+
+Si quiere configuraciones en su perfil copie los archivos en ${MNTPT}/${DDVDIR}/${PERFIL} y se copiarań automáticamente a ${MNTPT} antes de iniciar sesión
+
+EOF
+
+# Crear un fichero con los archivos actuales en el /home/aluxxxx
+ls -l ${MNTPT} > ${MNTPT}/files-in-this-directory-at-login-time.txt
+
+# Crear directorio de escritorio
+if [ ! -e ${MNTPT}/$DDVDIR/$ESCRITORIOESIT ]; then
+	mkdir -p ${MNTPT}/$DDVDIR/$ESCRITORIOESIT
+fi
+
+# Crear link escritorio
+if [ ! -e ${MNTPT}/Desktop ]; then
+	ln -s ${MNTPT}/$DDVDIR/$ESCRITORIOESIT ${MNTPT}/Desktop
+	[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   Creando Link ${MNTPT}/$DDVDIR/$ESCRITORIOESIT ${MNTPT}/Desktop"
+fi
+
+
+if [ ! -e ${MNTPT}/Escritorio ]; then
+	ln -s ${MNTPT}/$DDVDIR/$ESCRITORIOESIT ${MNTPT}/Escritorio
+	[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   Creando Link ${MNTPT}/$DDVDIR/$ESCRITORIOESIT ${MNTPT}/Escritorio"
+fi
+
+
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   Copia de perfi "
+
+######## PERFIL #############
+#
+# Copiar pefil de la red a directorio local
+#
+
+
+if [ -d ${MNTPT}/${DDVDIR}/${PERFIL} ]; then
+	echo "[Copiando perfil local mediante el comando rsync -avq ${MNTPT}/${DDVDIR}/${PERFIL}/ ${MNTPT}/]"
+	[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   Copiando perfil local:rsync -avq  ${MNTPT}/${DDVDIR}/${PERFIL}/ ${MNTPT}/"
+	rsync -avq  ${MNTPT}/${DDVDIR}/${PERFIL}/ ${MNTPT}/
+
+else
+	echo "[No existe perfil en ${MNTPT}/${DDVDIR}/${PERFIL}]"
+	[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH]   No existe perfil en ${MNTPT}/${DDVDIR}/${PERFIL}"
+	mkdir -p ${MNTPT}/${DDVDIR}/${PERFIL}/
+
+	cat > ${MNTPT}/${DDVDIR}/${PERFIL}/README.txt <<EOF
+Los ficheros y directorios de ${MNTPT}/${DDVDIR}/${PERFIL} son copiados al directorio ${MNTPT} cada vez que inicia sesión en un ordenador.
+
+Si quiere que algún fichero o directorio del configuración del perfil ${MNTPT} se copie automáticamente al directorio ${MNTPT}/${DDVDIR}/${PERFIL}, edite el fichero ${MNTPT}/${DDVDIR}/${PERFIL}/ficheros-perfil-local y por cada línea del fichero indique el directorio o fichero a copiar
+
+Utilice esta característica de forma eficiente y coherente, piense que si copia demasiados archivos puede tener problemas con la cuota de disco, login más lento, etc.
+
+EOF
+
+	cat > ${MNTPT}/${DDVDIR}/${PERFIL}/ficheros-perfil-local <<EOF
+# Cada línea de este fichero define los ficheros a copiar de  ${MNTPT} cada vez que se cierre sesión
+# El comando que se ejecuta exactamente será "rsync -avq  ${MNTPT}/${DDVDIR}/${PERFIL}/ ${MNTPT}/"
+.vim
+.fichero-prueba.txt
+.directorio-ejemplo
+.directorio-ejemplo2/dir-nivel2
+
+
+EOF
+
+fi
+
+## ficheros de prueba
+
+# [ ! -f ${MNTPT}/.fichero-prueba.txt ] && touch ${MNTPT}/.fichero-prueba.txt
+# [ -f ${MNTPT}/.fichero-prueba.txt ] && chown $PAM_USER.users ${MNTPT}/.fichero-prueba.txt
+#
+# [ ! -d ${MNTPT}/.directorio-ejemplo ] && mkdir ${MNTPT}/.directorio-ejemplo
+# [ ! -f ${MNTPT}/.directorio-ejemplo/.fichero-prueba2.txt ] && touch ${MNTPT}/.directorio-ejemplo/.fichero-prueba2.txt
+# [ -d ${MNTPT}/.directorio-ejemplo ] && chown -R $PAM_USER.users ${MNTPT}/.directorio-ejemplo
+#
+# [ ! -d ${MNTPT}/.directorio-ejemplo2/dir-nivel2 ] && mkdir -p ${MNTPT}/.directorio-ejemplo2/dir-nivel2
+# [ ! -f ${MNTPT}/.directorio-ejemplo2/dir-nivel2/.fichero-prueba3.txt ] && touch ${MNTPT}/.directorio-ejemplo2/dir-nivel2/.fichero-prueba3.txt
+# [ -d ${MNTPT}/.directorio-ejemplo2/dir-nivel2 ] && chown -R $PAM_USER.users ${MNTPT}/.directorio-ejemplo2
+#
+
+#
+# Log global
+#
+if [ -e /soft/log/usuarios.log ]; then
+	echo "LOGIN: $FECHA : $PAM_USER : $HOSTNAME" >> /soft/log/usuarios.log
+fi
+
+echo "[Usuario autenticado]"
+[ $DEBUG -ne 0 ] && ${LOG} "[PAM-SCRIPT-AUTH] Finalizado pam_script_auth. Usuario autenticado ${PAM_USER} "
+
+
+chown $PAM_USER ${MNTPT}
+
