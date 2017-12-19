@@ -29,7 +29,7 @@ ENV PATH $HADOOP_PREFIX/bin/:$PATH
 
 RUN apt-get install -y python python-pip
 RUN pip install -q --upgrade pip 
-RUN pip install  pyspark 
+RUN pip install -q pyspark 
 
 ADD entrypoint.sh /entrypoint.sh
 RUN chmod a+x /entrypoint.sh
