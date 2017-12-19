@@ -27,9 +27,9 @@ ENV MULTIHOMED_NETWORK=1
 ENV USER=root
 ENV PATH $HADOOP_PREFIX/bin/:$PATH
 
-RUN apt-get install -y python python-pip
-RUN pip install -q --upgrade pip 
-RUN pip install -q pyspark 
+RUN apt-get install -y python3.5 python3-pip
+RUN pip3 install -q --upgrade pip 
+RUN pip3 install -q pyspark 
 
 ADD entrypoint.sh /entrypoint.sh
 RUN chmod a+x /entrypoint.sh
