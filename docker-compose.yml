@@ -2,7 +2,7 @@ version: '3'
 
 services:
   namenode:
-      image: esitull/stack-hadoop-docker:namenode
+    image: esitull/stack-hadoop-docker:namenode
     hostname: namenode
     container_name: namenode
 #    domainname: hadoop
@@ -26,7 +26,7 @@ services:
          constraints:
            - node.hostname == c3
   datanode:
-      image: esitull/stack-hadoop-docker:datanode
+    image: esitull/stack-hadoop-docker:datanode
     hostname: datanode
     container_name: datanode
 #    domainname: hadoop
@@ -46,7 +46,7 @@ services:
         condition: on-failure
 
   resourcemanager:
-      image: esitull/stack-hadoop-docker:resourcemanager
+    image: esitull/stack-hadoop-docker:resourcemanager
     hostname: resourcemanager
     #domainname: hadoop
     container_name: resourcemanager
@@ -75,7 +75,7 @@ services:
 
 
   nodemanager:
-      image: esitull/stack-hadoop-docker:nodemanager
+    image: esitull/stack-hadoop-docker:nodemanager
     hostname: nodemanager
     container_name: nodemanager
  #   domainname: hadoop
@@ -93,7 +93,7 @@ services:
            - node.hostname == c3
 
   spark:
-      image: esitull/stack-hadoop-docker:spark
+    image: esitull/stack-hadoop-docker:spark
     hostname: spark
     container_name: spark
 #    domainname: hadoop

@@ -9,7 +9,7 @@ for c in `printenv | perl -sne 'print "$1 " if m/^SPARK_CONF_(.+?)=.*/'`; do
     echo $name $value >> /etc/profile.d/spark-defaults.conf
 done 
 
-/usr/sbin/sshd -D
+#/usr/sbin/sshd -D
 source /etc/profile.d/variables.sh
 
 case $1 in
