@@ -1,3 +1,3 @@
 #!/bin/sh
 
-docker build -t hadoop-resourcemanager .
+docker build -t esitull/stack-hadoop-docker:resourcemanager .

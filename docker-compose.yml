@@ -73,7 +73,6 @@ services:
          constraints:
            - node.hostname == c3
 
-
   nodemanager:
     image: esitull/stack-hadoop-docker:nodemanager
     hostname: nodemanager

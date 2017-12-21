@@ -32,7 +32,7 @@ RUN echo "export SPARK_DIST_CLASSPATH=$(hadoop classpath)" >> /opt/spark-$SPARK_
 ### Some packages for an easy life.
 RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
-RUN apt-get clean
+RUN apt-get clean && apt-get update -y
 RUN apt-get install -y --fix-missing \
     wget \
     vim \
@@ -43,7 +43,7 @@ RUN apt-get install -y --fix-missing \
     libnss-ldap  \
     libpam-script 
 
-RUN apt-get clean
+# RUN apt-get clean && apt-get update
 RUN apt-get install -y --fix-missing \
   gcc \
   binutils \

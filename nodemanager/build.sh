@@ -1,3 +1,3 @@
 #!/bin/sh
 
-docker build -t hadoop-nodemanager .
+docker build -t esitull/stack-hadoop-docker:nodemanager .

@@ -1,3 +1,3 @@
 #!/bin/sh
 
-docker build -t hadoop:2.8.1 .
+docker build -t esitull/stack-hadoop-docker:hadoop .
