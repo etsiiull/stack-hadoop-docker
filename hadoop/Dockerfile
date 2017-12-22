@@ -28,6 +28,7 @@ ENV USER=root
 ENV PATH $HADOOP_PREFIX/bin/:$PATH
 
 RUN apt-get install -y python python-pip
+RUN pip install pip --upgrade
 RUN pip install pyspark
 RUN apt-get install -y python3.5 python3-pip
 RUN pip3 install -q --upgrade pip 
